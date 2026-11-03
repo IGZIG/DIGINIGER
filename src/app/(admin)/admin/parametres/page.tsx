@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { aiConfigReport } from "@/lib/ai/tutor";
 import { AiDiagnostic } from "@/components/dashboard/ai-diagnostic";
+import { AiKnowledge } from "@/components/dashboard/ai-knowledge";
 import { paymentStatus } from "@/lib/payments/provider";
 
 export const metadata: Metadata = { title: "Paramètres (admin)" };
@@ -112,6 +113,7 @@ export default async function AdminSettingsPage() {
             </ul>
           )}
           <AiDiagnostic />
+          <AiKnowledge />
         </div>
       </section>
 

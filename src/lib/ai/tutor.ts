@@ -132,6 +132,35 @@ export function aiConfigReport(): AiConfigReport {
  * dimension renvoyée. Sert au script `npm run ai:check` et au bouton de test
  * de l'administration — on ne se contente pas de la présence d'une variable.
  */
+/**
+ * Traduit une erreur du fournisseur en message lisible par un administrateur
+ * non technique. On ne simule jamais une réussite : si le compte n'a plus de
+ * crédit, on le dit explicitement.
+ */
+export function aiErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "UNKNOWN");
+  const lower = raw.toLowerCase();
+  if (lower.includes("credit_balance_exhausted") || lower.includes("no credits remaining")) {
+    return (
+      "Le compte OpenAI n'a plus de crédit. Ajoutez du crédit sur " +
+      "platform.openai.com/settings/organization/billing, puis relancez le diagnostic."
+    );
+  }
+  if (lower.includes("invalid_api_key") || lower.includes("incorrect api key")) {
+    return "La clé OpenAI est refusée. Vérifiez qu'elle n'a pas été révoquée, puis remplacez-la.";
+  }
+  if (lower.includes("insufficient_quota")) {
+    return "Quota OpenAI dépassé ou moyen de paiement refusé. Vérifiez la facturation du compte.";
+  }
+  if (lower.includes("rate limit") || lower.includes("429")) {
+    return "Trop de requêtes envoyées à OpenAI en peu de temps. Réessayez dans une minute.";
+  }
+  if (lower.includes("model_not_found") || lower.includes("does not exist")) {
+    return `Le modèle configuré n'est pas accessible avec cette clé (${CHAT_MODEL}).`;
+  }
+  return raw.slice(0, 300);
+}
+
 export async function probeAi(): Promise<{
   chat: { ok: boolean; model?: string; error?: string };
   embeddings: { ok: boolean; model?: string; dimensions?: number; error?: string };
@@ -158,7 +187,7 @@ export async function probeAi(): Promise<{
     });
     result.chat = { ok: Boolean(completion.choices[0]?.message?.content), model: completion.model };
   } catch (error) {
-    result.chat = { ok: false, error: error instanceof Error ? error.message : "UNKNOWN" };
+    result.chat = { ok: false, error: aiErrorMessage(error) };
   }
 
   try {
@@ -177,7 +206,7 @@ export async function probeAi(): Promise<{
           : `dimension ${dimensions} ≠ ${VECTOR_DIMENSIONS} attendue par la colonne vector`,
     };
   } catch (error) {
-    result.embeddings = { ok: false, error: error instanceof Error ? error.message : "UNKNOWN" };
+    result.embeddings = { ok: false, error: aiErrorMessage(error) };
   }
 
   return result;

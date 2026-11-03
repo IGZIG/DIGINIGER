@@ -3,7 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getApiUser } from "@/lib/auth";
 import { aiChatSchema } from "@/lib/validation";
-import { askTutor, isAiConfigured, retrieveContext } from "@/lib/ai/tutor";
+import { aiErrorMessage, askTutor, isAiConfigured, retrieveContext } from "@/lib/ai/tutor";
 
 /**
  * POST /api/ai/chat — DIGINIGER AI Tutor
@@ -183,9 +183,11 @@ export async function POST(request: Request) {
       history,
       message,
     );
-  } catch {
+  } catch (error) {
+    // Message honnête : on explique la cause réelle (crédit, clé, modèle…)
+    // au lieu d'un « indisponible » qui masquerait un problème de facturation.
     return NextResponse.json(
-      { error: "AI_PROVIDER_ERROR", message: "Le tuteur est momentanément indisponible. Réessayez." },
+      { error: "AI_PROVIDER_ERROR", message: aiErrorMessage(error) },
       { status: 502 },
     );
   }
