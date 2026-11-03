@@ -184,7 +184,7 @@ export async function POST(request: Request) {
       const message = aiErrorMessage(error);
       await admin
         .from("course_documents")
-        .update({ status: "error", error: message.slice(0, 300) })
+        .update({ status: "failed", error: message.slice(0, 300) })
         .eq("id", job.documentId);
       results.push({
         courseId: job.courseId,
