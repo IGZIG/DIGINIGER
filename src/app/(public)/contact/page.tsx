@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 };
 
 const INFO = [
-  { icon: MapPin, label: "Adresse", value: "Avenue de l'Uranium, Niamey, Niger" },
+  { icon: MapPin, label: "Adresse", value: "Avenue de l'Indépendance, Niamey, Niger" },
   { icon: Mail, label: "Email", value: "contact@diginiger.ne", href: "mailto:contact@diginiger.ne" },
-  { icon: Phone, label: "Téléphone", value: "+227 20 00 00 00", href: "tel:+22720000000" },
+  { icon: Phone, label: "Téléphone", value: "+227 80 61 09 93", href: "tel:+22780610993" },
   { icon: Clock, label: "Horaires", value: "Lundi — vendredi, 09h00 à 18h00 (GMT+1)" },
 ];
 

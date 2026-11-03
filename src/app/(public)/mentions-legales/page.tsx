@@ -9,8 +9,8 @@ export default function LegalNoticePage() {
       <h2>Éditeur du site</h2>
       <p>
         DIGINIGER — académie numérique.<br />
-        Siège : Avenue de l&apos;Uranium, Niamey, Niger.<br />
-        Email : contact@diginiger.ne — Téléphone : +227 20 00 00 00.
+        Siège : Avenue de l&apos;Indépendance, Niamey, Niger.<br />
+        Email : contact@diginiger.ne — Téléphone : +227 80 61 09 93.
       </p>
 
       <h2>Directeur de la publication</h2>

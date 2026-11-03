@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { PromoToggle } from "@/components/dashboard/admin-actions";
 import { PromoCodeForm } from "@/components/forms/promo-code-form";
 import { RefundActions } from "@/components/dashboard/refund-actions";
+import { PaymentDiagnostic } from "@/components/dashboard/payment-diagnostic";
 import { requireRole } from "@/lib/auth";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { paymentStatus } from "@/lib/payments/provider";
@@ -74,6 +75,7 @@ export default async function AdminPaymentsPage() {
             )}
           </div>
         </div>
+        <PaymentDiagnostic />
       </section>
 
       <section>

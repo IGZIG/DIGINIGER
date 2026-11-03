@@ -60,7 +60,7 @@ export function SiteFooter() {
           <div className="mt-6 space-y-2.5 text-sm">
             <p className="flex items-center gap-2.5">
               <MapPin className="h-4 w-4 text-gold-500" aria-hidden />
-              Avenue de l&apos;Uranium, Niamey, Niger
+              Avenue de l&apos;Indépendance, Niamey, Niger
             </p>
             <p className="flex items-center gap-2.5">
               <Mail className="h-4 w-4 text-gold-500" aria-hidden />
@@ -70,7 +70,7 @@ export function SiteFooter() {
             </p>
             <p className="flex items-center gap-2.5">
               <Phone className="h-4 w-4 text-gold-500" aria-hidden />
-              +227 20 00 00 00
+              +227 80 61 09 93
             </p>
           </div>
           <div className="mt-6 flex gap-2">
