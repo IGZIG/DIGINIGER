@@ -358,6 +358,9 @@ class CinetPayAdapter implements PaymentAdapter {
         description: intent.description.replace(/[#/$,&_]/g, " ").slice(0, 250),
         customer_email: intent.customerEmail,
         customer_phone_number: intent.customerPhone ?? undefined,
+        // Niger : CinetPay route vers Airtel Money / Orange Money / Moov Money.
+        customer_country: "NE",
+        customer_city: "Niamey",
         notify_url: intent.notifyUrl,
         return_url: intent.returnUrl,
         channels: "ALL",
@@ -691,8 +694,11 @@ export function mobileMoneyVendor(): VendorName {
     return declared;
   }
   // Détection automatique : la présence des clés fait foi.
-  if (process.env.PAYDUNYA_MASTER_KEY && process.env.PAYDUNYA_PRIVATE_KEY) return "paydunya";
+  // CinetPay est testé en premier : c'est le seul agrégateur parmi les deux qui
+  // couvre le Niger (BF, BJ, CI, CM, ML, NE, SN, TG en XOF). PayDunya ne couvre
+  // pas le Niger et n'est proposé qu'en repli.
   if (process.env.CINETPAY_API_KEY && process.env.CINETPAY_SITE_ID) return "cinetpay";
+  if (process.env.PAYDUNYA_MASTER_KEY && process.env.PAYDUNYA_PRIVATE_KEY) return "paydunya";
   if (process.env.PAYMENT_API_URL && process.env.PAYMENT_API_KEY) return "generic";
   return "generic";
 }

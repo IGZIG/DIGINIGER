@@ -21,6 +21,25 @@ import { getPaymentAdapter, type ProviderName } from "@/lib/payments/provider";
  *  7. réponse 200 rapide ; 502 si la confirmation est injoignable, pour que
  *     le fournisseur rejoue la notification plus tard.
  */
+/**
+ * CinetPay envoie d'abord une requête GET de contrôle sur l'adresse de
+ * notification avant d'envoyer le POST. Elle doit recevoir un 200 immédiat,
+ * sinon la notification n'est jamais transmise. Aucun traitement financier
+ * n'a lieu ici : le POST (confirmé serveur-à-serveur) seul ouvre un accès.
+ */
+export async function GET() {
+  const adapter = getPaymentAdapter("mobile_money");
+  const host = adapter.vendor === "cinetpay" ? "cinetpay" : adapter.vendor;
+  return NextResponse.json({
+    ok: true,
+    endpoint: "payments/webhook",
+    vendor: adapter.vendor,
+    configured: adapter.isConfigured(),
+    confirmationRequired: true,
+    note: `${host} : notification reçue. Le statut réel est toujours vérifié auprès du fournisseur.`,
+  });
+}
+
 export async function POST(request: Request) {
   const url = new URL(request.url);
   const provider = (url.searchParams.get("provider") ?? "mobile_money") as ProviderName;
@@ -177,15 +196,4 @@ export async function POST(request: Request) {
 }
 
 /** Certains agrégateurs vérifient l'URL par un GET : on répond 200 sans traiter. */
-export async function GET() {
-  const adapter = getPaymentAdapter("mobile_money");
-  return NextResponse.json({
-    ok: true,
-    endpoint: "payments/webhook",
-    configured: adapter.isConfigured(),
-    vendor: adapter.vendor,
-    confirmationRequired: true,
-  });
-}
-
 export const dynamic = "force-dynamic";
