@@ -116,6 +116,40 @@ const server = createServer((request, response) => {
       });
     }
 
+    // --- Création de paiement IPay Money
+    if (request.method === "POST" && url.pathname === "/ipay/payments") {
+      const payload = JSON.parse(body || "{}");
+      if (!payload.msisdn || String(payload.msisdn).length < 8 || Number(payload.amount) <= 100) {
+        return json(400, { message: "Montant ou numéro invalide" });
+      }
+      const ref = `ipay_${crypto.randomUUID().slice(0, 10)}`;
+      invoices.set(ref, {
+        reference: payload.transaction_id ?? "",
+        amount: Number(payload.amount ?? 0),
+        status: "pending",
+        ipay: true,
+      });
+      return json(200, { status: "pending", reference: ref, public_reference: ref, meta_data: {} });
+    }
+
+    // --- Consultation d'une transaction IPay (source de vérité)
+    if (request.method === "GET" && url.pathname.startsWith("/ipay/payments/")) {
+      const ref = decodeURIComponent(url.pathname.split("/").pop());
+      const invoice = invoices.get(ref);
+      if (!invoice) return json(404, { message: "Payment Not Found" });
+      if (confirmationMode === "down") return json(503, { message: "Service indisponible" });
+      const amount =
+        confirmationMode === "mismatch-amount" ? invoice.amount + 5000 : invoice.amount;
+      return json(200, {
+        reference: ref,
+        external_reference: invoice.reference,
+        status: invoice.status,
+        msisdn: "80610993",
+        amount,
+        validated_at: invoice.status === "succeeded" ? new Date().toISOString() : null,
+      });
+    }
+
     // --- Création de paiement CinetPay
     if (request.method === "POST" && url.pathname === "/cinetpay/v2/payment") {
       const payload = JSON.parse(body || "{}");
@@ -175,6 +209,11 @@ async function startApp(port, extraEnv) {
       PAYDUNYA_TOKEN: "sandbox-token",
       PAYDUNYA_API_URL: `${HOST}/paydunya`,
       PAYDUNYA_CHECKOUT_URL: `${HOST}/pay`,
+      IPAY_PRIVATE_KEY: "sandbox-ipay-private-key",
+      IPAY_PUBLIC_KEY: "sandbox-ipay-public-key",
+      IPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      IPAY_ENVIRONMENT: "sandbox",
+      IPAY_API_URL: `${HOST}/ipay`,
       CINETPAY_API_KEY: "sandbox-cinetpay-key",
       CINETPAY_SITE_ID: "sandbox-site",
       CINETPAY_API_URL: `${HOST}/cinetpay`,
@@ -205,11 +244,14 @@ async function startApp(port, extraEnv) {
 
 let APP_PAYDUNYA;
 let APP_CINETPAY;
+let APP_IPAY;
 try {
   APP_PAYDUNYA = await startApp(APP_PORT, { PAYMENT_PROVIDER: "paydunya" });
   console.log(`Instance PayDunya sur ${APP_PAYDUNYA}`);
   APP_CINETPAY = await startApp(APP_PORT + 1, { PAYMENT_PROVIDER: "cinetpay" });
   console.log(`Instance CinetPay sur ${APP_CINETPAY}`);
+  APP_IPAY = await startApp(APP_PORT + 2, { PAYMENT_PROVIDER: "ipay" });
+  console.log(`Instance IPay Money sur ${APP_IPAY}`);
 } catch (error) {
   console.error(error.message);
   for (const child of appProcesses) child.kill("SIGKILL");
@@ -442,15 +484,98 @@ check("transaction confirmée payée", s7.status === "paid", s7.status);
 // scénario précédent : on vérifie l'existence de l'inscription, pas un delta.
 check("inscription ouverte après confirmation", (await stateOf(tx7.reference)).enrolled === true);
 
+console.log("\n=== 8. Agrégateur nigérien : IPay Money");
+
+// 8a. En-tête Secret-Hash manquant → refus net.
+const tx8 = await createTransaction({ amount: 7500 });
+const ipayRef8 = `ipay_ok_${crypto.randomUUID().slice(0, 8)}`;
+invoices.set(ipayRef8, { reference: tx8.reference, amount: 7500, status: "succeeded", ipay: true });
+const ipayBody8 = JSON.stringify({
+  data: {
+    external_reference: tx8.reference,
+    reference: ipayRef8,
+    status: "succeeded",
+    msisdn: "80610993",
+    amount: 7500,
+    net_amount: 7425,
+    failure_reason: null,
+    customer_name: "Client Test",
+    payment_method: "mobile_money",
+    validated_at: new Date().toISOString(),
+  },
+});
+
+const r8bad = await postWebhook("provider=mobile_money", ipayBody8, {}, APP_IPAY);
+check("IPay : Secret-Hash absent → 401", r8bad.status === 401, `HTTP ${r8bad.status}`);
+
+// 8b. Notification avec le bon Secret-Hash + confirmation serveur-à-serveur.
+const r8 = await postWebhook(
+  "provider=mobile_money",
+  ipayBody8,
+  { "secret-hash": WEBHOOK_SECRET },
+  APP_IPAY,
+);
+const s8 = await stateOf(tx8.reference);
+check("IPay : notification acceptée", r8.status === 200, `HTTP ${r8.status} ${JSON.stringify(r8.json)}`);
+check("IPay : transaction payée", s8.status === "paid", s8.status);
+check("IPay : inscription ouverte", s8.enrolled === true);
+
+// 8c. Rejeu → idempotent.
+const r8b = await postWebhook(
+  "provider=mobile_money",
+  ipayBody8,
+  { "secret-hash": WEBHOOK_SECRET },
+  APP_IPAY,
+);
+check("IPay : rejeu ignoré (duplicate)", r8b.json?.duplicate === true, JSON.stringify(r8b.json));
+
+// 8d. La consultation fait foi : un statut « pending » côté IPay ne doit rien ouvrir,
+//     même si la notification prétend « succeeded ».
+const tx8d = await createTransaction({ amount: 4000 });
+const ipayRef8d = `ipay_pending_${crypto.randomUUID().slice(0, 8)}`;
+invoices.set(ipayRef8d, { reference: tx8d.reference, amount: 4000, status: "pending", ipay: true });
+const ipayBody8d = JSON.stringify({
+  data: {
+    external_reference: tx8d.reference,
+    reference: ipayRef8d,
+    status: "succeeded",
+    msisdn: "80610993",
+    amount: 4000,
+  },
+});
+await postWebhook("provider=mobile_money", ipayBody8d, { "secret-hash": WEBHOOK_SECRET }, APP_IPAY);
+const s8d = await stateOf(tx8d.reference);
+check("IPay : notification « succeeded » contredite par la consultation → accès refusé", s8d.status !== "paid", s8d.status);
+
+// 8e. Montant confirmé différent du montant en base → 409.
+const tx8e = await createTransaction({ amount: 3000 });
+const ipayRef8e = `ipay_mismatch_${crypto.randomUUID().slice(0, 8)}`;
+invoices.set(ipayRef8e, { reference: tx8e.reference, amount: 3000, status: "succeeded", ipay: true });
+const ipayBody8e = JSON.stringify({
+  data: {
+    external_reference: tx8e.reference,
+    reference: ipayRef8e,
+    status: "succeeded",
+    msisdn: "80610993",
+    amount: 3000,
+  },
+});
+confirmationMode = "mismatch-amount";
+const r8e = await postWebhook("provider=mobile_money", ipayBody8e, { "secret-hash": WEBHOOK_SECRET }, APP_IPAY);
+confirmationMode = "ok";
+const s8e = await stateOf(tx8e.reference);
+check("IPay : montant forgé → 409", r8e.status === 409, `HTTP ${r8e.status} ${JSON.stringify(r8e.json)}`);
+check("IPay : aucun accès sur montant forgé", s8e.status !== "paid", s8e.status);
+
 // ---------------------------------------------------------------------------
 // Nettoyage : on retire uniquement les données créées par ce script.
 // ---------------------------------------------------------------------------
-const createdRefs = [tx1, tx3, tx4, tx6, tx7].map((tx) => tx.reference);
+const createdRefs = [tx1, tx3, tx4, tx6, tx7, tx8, tx8d, tx8e].map((tx) => tx.reference);
 await db.query(
   "delete from enrollments where course_id = any($1::uuid[]) and user_id = any($2::uuid[])",
   [createdRefs.map(() => tx1.courseId), createdRefs.map(() => tx1.userId)],
 );
-await db.query("delete from payment_events where event_id like 'paydunya:%' or event_id like 'cinetpay:%'");
+await db.query("delete from payment_events where event_id like 'paydunya:%' or event_id like 'cinetpay:%' or event_id like 'ipay:%'");
 await db.query("delete from transactions where reference like 'SBX-%'");
 
 await db.end();

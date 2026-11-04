@@ -124,7 +124,7 @@ export default async function AdminSettingsPage() {
         </div>
         <div className="mt-3">
           <ConfigRow
-            label={`Mobile Money — ${payments.vendor === "paydunya" ? "PayDunya" : payments.vendor === "cinetpay" ? "CinetPay" : "adaptateur générique"}`}
+            label={`Mobile Money — ${payments.vendor === "ipay" ? "IPay Money" : payments.vendor === "paydunya" ? "PayDunya" : payments.vendor === "cinetpay" ? "CinetPay" : "adaptateur générique"}`}
             configured={payments.mobileMoney}
             hint={
               payments.mobileMoney

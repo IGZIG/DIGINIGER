@@ -28,7 +28,7 @@ import crypto from "node:crypto";
 export type ProviderName = "mobile_money" | "card";
 
 /** Identifiant du fournisseur concret (variable PAYMENT_PROVIDER). */
-export type VendorName = "paydunya" | "cinetpay" | "generic";
+export type VendorName = "ipay" | "paydunya" | "cinetpay" | "generic";
 
 export interface PaymentIntent {
   reference: string;
@@ -310,6 +310,176 @@ class PayDunyaAdapter implements PaymentAdapter {
         amountXof: Number(payload.invoice?.total_amount ?? 0),
         reference: String(payload.custom_data?.reference ?? ""),
         providerRef: String(payload.invoice?.token ?? providerRef),
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 0. IPay Money (iMoney Encaissement) — agrégateur nigérien agréé BCEAO
+// ---------------------------------------------------------------------------
+/**
+ * IPay Money (i-FUTUR, Niamey) est le seul agrégateur de premier rang couvrant
+ * réellement le Niger : Airtel Money, Moov Money, Zamani Cash, cartes Visa /
+ * Mastercard et GIM UEMOA, plus plusieurs banques locales.
+ *
+ * Spécificités respectées ici :
+ *  - en-têtes obligatoires : `Authorization: Bearer <clé privée>`,
+ *    `Ipay-Payment-Type: mobile`, `Ipay-Target-Environment: sandbox|live` ;
+ *  - la création d'un paiement ne vaut JAMAIS preuve : la documentation impose
+ *    d'appeler `GET /payments/{reference}` avant de livrer quoi que ce soit ;
+ *  - la notification porte `external_reference` (notre référence) ;
+ *  - l'en-tête `Secret-Hash` est un secret partagé STATIQUE, pas un HMAC du
+ *    corps : il sert de premier filtre, la confirmation fait foi ;
+ *  - un webhook manqué n'est pas rejoué : la confirmation serveur-à-serveur et
+ *    la page de retour couvrent ce cas.
+ */
+class IPayAdapter implements PaymentAdapter {
+  name: ProviderName = "mobile_money";
+  vendor: VendorName = "ipay";
+
+  private get privateKey() {
+    return process.env.IPAY_PRIVATE_KEY ?? "";
+  }
+  private get publicKey() {
+    return process.env.IPAY_PUBLIC_KEY ?? "";
+  }
+  private get secretHash() {
+    return process.env.IPAY_WEBHOOK_SECRET ?? process.env.PAYMENT_WEBHOOK_SECRET ?? "";
+  }
+  private get environment() {
+    return process.env.IPAY_ENVIRONMENT === "live" ? "live" : "sandbox";
+  }
+  private get baseUrl() {
+    return process.env.IPAY_API_URL ?? "https://i-pay.money/api/v1";
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.privateKey);
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${this.privateKey}`,
+      "Ipay-Payment-Type": "mobile",
+      "Ipay-Target-Environment": this.environment,
+    };
+  }
+
+  async initiate(intent: PaymentIntent): Promise<PaymentInitResult> {
+    if (!this.isConfigured()) throw new Error("PAYMENT_NOT_CONFIGURED");
+
+    // IPay exige un montant strictement supérieur à 100 XOF.
+    if (!Number.isFinite(intent.amountXof) || intent.amountXof <= 100) {
+      throw new Error("PAYMENT_AMOUNT_TOO_LOW");
+    }
+
+    // `msisdn` est obligatoire : sans numéro, le paiement mobile est refusé.
+    const msisdn = (intent.customerPhone ?? "").replace(/[^0-9]/g, "");
+    if (msisdn.length < 8) throw new Error("PAYMENT_PHONE_REQUIRED");
+
+    const response = await fetch(`${this.baseUrl}/payments`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        amount: intent.amountXof,
+        currency: "XOF",
+        country: "NE",
+        msisdn,
+        transaction_id: intent.reference.replace(/[^A-Za-z0-9-]/g, ""),
+        customer_name: intent.customerEmail.split("@")[0] || "Client DIGINIGER",
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      status?: string;
+      reference?: string;
+      public_reference?: string;
+      message?: string;
+    };
+
+    if (!response.ok || !payload.reference) {
+      const detail = payload.message ?? `HTTP ${response.status}`;
+      throw new Error(`PAYMENT_PROVIDER_REFUSED_${detail}`.slice(0, 160));
+    }
+
+    // Pas de page hébergée sur ce point d'entrée : le client reçoit une demande
+    // de validation sur son téléphone (USSD / push opérateur). On lui indique
+    // où suivre son paiement plutôt que de le rediriger à tort.
+    return {
+      redirectUrl: intent.returnUrl,
+      providerRef: payload.reference,
+      instructions:
+        "Validez la demande de paiement reçue sur votre téléphone (Airtel Money, Moov Money ou Zamani). " +
+        "La page se met à jour dès confirmation par l'opérateur.",
+    };
+  }
+
+  /**
+   * `Secret-Hash` : valeur statique choisie dans le tableau de bord IPay et
+   * recopiée telle quelle dans chaque notification. Comparaison à temps constant.
+   */
+  verifySignature(_rawBody: string, headers: Headers): boolean {
+    const provided =
+      headers.get("secret-hash") ?? headers.get("x-secret-hash") ?? headers.get("x-ipay-signature");
+    if (!this.secretHash || !provided) return false;
+    return timingSafeEqual(this.secretHash, provided);
+  }
+
+  normalizeEvent(payload: Record<string, unknown>): NormalizedEvent {
+    const data = (payload.data ?? payload) as Record<string, any>;
+    const status = String(data.status ?? "").toLowerCase();
+    const reference = String(data.external_reference ?? "");
+    const providerRef = String(data.reference ?? "");
+
+    return {
+      eventId: `ipay:${providerRef || reference}:${status}`,
+      type: statusToType(status),
+      reference,
+      providerRef,
+      amountXof: Number(data.amount ?? 0),
+      trusted: true,
+      raw: payload,
+    };
+  }
+
+  /**
+   * Seule source qui fait foi. La documentation IPay est explicite : la réponse
+   * de création ne doit jamais déclencher une livraison.
+   */
+  async confirm(_reference: string, providerRef: string): Promise<ConfirmationResult | null> {
+    if (!this.isConfigured() || !providerRef) return null;
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/payments/${encodeURIComponent(providerRef)}`,
+        { headers: this.headers(), signal: AbortSignal.timeout(15_000) },
+      );
+      if (!response.ok) return null;
+
+      const payload = (await response.json()) as {
+        status?: string;
+        amount?: number | string;
+        reference?: string;
+        external_reference?: string;
+      };
+
+      const status = String(payload.status ?? "").toLowerCase();
+      return {
+        status:
+          status === "succeeded"
+            ? "succeeded"
+            : status === "failed" || status === "refunded"
+              ? "failed"
+              : "pending",
+        amountXof: Number(payload.amount ?? 0),
+        reference: String(payload.external_reference ?? ""),
+        providerRef: String(payload.reference ?? providerRef),
       };
     } catch {
       return null;
@@ -690,13 +860,16 @@ class CardAdapter implements PaymentAdapter {
 /** Fournisseur Mobile Money effectivement sélectionné par la configuration. */
 export function mobileMoneyVendor(): VendorName {
   const declared = (process.env.PAYMENT_PROVIDER ?? "").toLowerCase();
-  if (declared === "paydunya" || declared === "cinetpay" || declared === "generic") {
+  if (declared === "ipay" || declared === "paydunya" || declared === "cinetpay" || declared === "generic") {
     return declared;
   }
   // Détection automatique : la présence des clés fait foi.
-  // CinetPay est testé en premier : c'est le seul agrégateur parmi les deux qui
-  // couvre le Niger (BF, BJ, CI, CM, ML, NE, SN, TG en XOF). PayDunya ne couvre
-  // pas le Niger et n'est proposé qu'en repli.
+  // Ordre de préférence pour le Niger :
+  //  1. IPay Money — agrégateur nigérien (i-FUTUR, agréé BCEAO) : Airtel, Moov,
+  //     Zamani, cartes et banques locales, en XOF.
+  //  2. CinetPay — couvre le Niger (BF, BJ, CI, CM, ML, NE, SN, TG).
+  //  3. PayDunya — ne couvre PAS le Niger ; conservé en repli uniquement.
+  if (process.env.IPAY_PRIVATE_KEY) return "ipay";
   if (process.env.CINETPAY_API_KEY && process.env.CINETPAY_SITE_ID) return "cinetpay";
   if (process.env.PAYDUNYA_MASTER_KEY && process.env.PAYDUNYA_PRIVATE_KEY) return "paydunya";
   if (process.env.PAYMENT_API_URL && process.env.PAYMENT_API_KEY) return "generic";
@@ -706,6 +879,8 @@ export function mobileMoneyVendor(): VendorName {
 export function getPaymentAdapter(provider: ProviderName): PaymentAdapter {
   if (provider === "card") return new CardAdapter();
   switch (mobileMoneyVendor()) {
+    case "ipay":
+      return new IPayAdapter();
     case "paydunya":
       return new PayDunyaAdapter();
     case "cinetpay":
@@ -721,7 +896,11 @@ export function paymentStatus() {
   const adapter = getPaymentAdapter("mobile_money");
   const missing: string[] = [];
 
-  if (vendor === "paydunya") {
+  if (vendor === "ipay") {
+    for (const key of ["IPAY_PRIVATE_KEY"]) {
+      if (!process.env[key]) missing.push(key);
+    }
+  } else if (vendor === "paydunya") {
     for (const key of ["PAYDUNYA_MASTER_KEY", "PAYDUNYA_PRIVATE_KEY", "PAYDUNYA_TOKEN"]) {
       if (!process.env[key]) missing.push(key);
     }
@@ -742,9 +921,11 @@ export function paymentStatus() {
     mode:
       vendor === "paydunya"
         ? (process.env.PAYDUNYA_MODE ?? "test")
-        : (process.env.PAYMENT_MODE ?? "test"),
+        : vendor === "ipay"
+          ? (process.env.IPAY_ENVIRONMENT ?? "sandbox")
+          : (process.env.PAYMENT_MODE ?? "test"),
     missing,
     /** Confirmation serveur-à-serveur : obligatoire pour ouvrir un accès. */
-    requiresConfirmation: vendor === "paydunya" || vendor === "cinetpay",
+    requiresConfirmation: vendor === "ipay" || vendor === "paydunya" || vendor === "cinetpay",
   };
 }

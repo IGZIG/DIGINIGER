@@ -41,6 +41,59 @@ export async function GET() {
 
   const notifyUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://diginiger.vercel.app"}/api/payments/webhook?provider=mobile_money`;
 
+  if (status.vendor === "ipay") {
+    const baseUrl = process.env.IPAY_API_URL ?? "https://i-pay.money/api/v1";
+    const environment = process.env.IPAY_ENVIRONMENT === "live" ? "live" : "sandbox";
+
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${process.env.IPAY_PRIVATE_KEY ?? ""}`,
+      "Ipay-Payment-Type": "mobile",
+      "Ipay-Target-Environment": environment,
+    };
+
+    try {
+      // Référence volontairement inconnue : l'API doit répondre 404 avec un
+      // compte valide, et 401 si la clé est refusée. Aucun paiement créé.
+      const response = await fetch(
+        `${baseUrl}/payments/DIGINIGER-DIAGNOSTIC-0000`,
+        { headers, signal: AbortSignal.timeout(15_000) },
+      );
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      const authRefused = response.status === 401 || response.status === 403;
+
+      return NextResponse.json({
+        configured: true,
+        vendor: "ipay",
+        mode: environment,
+        apiHost: new URL(baseUrl).host,
+        notifyUrl,
+        httpStatus: response.status,
+        providerCode: String(response.status),
+        providerMessage: payload.message ?? null,
+        reachable: !authRefused,
+        message: authRefused
+          ? "IPay Money refuse cette clé privée. Vérifiez la clé et l'environnement (sandbox ou live) : ils doivent correspondre."
+          : response.status === 404
+            ? "Clés acceptées par IPay Money. La référence de test est inconnue du compte (attendu) — la connexion fonctionne."
+            : `IPay Money a répondu (HTTP ${response.status})${payload.message ? ` : ${payload.message}` : "."}`,
+      });
+    } catch (error) {
+      return NextResponse.json({
+        configured: true,
+        vendor: "ipay",
+        mode: environment,
+        notifyUrl,
+        reachable: false,
+        message:
+          error instanceof Error && error.name === "TimeoutError"
+            ? "IPay Money n'a pas répondu en 15 secondes. Réessayez."
+            : "Impossible de joindre IPay Money depuis le serveur.",
+      });
+    }
+  }
+
   if (status.vendor === "paydunya") {
     const baseUrl =
       process.env.PAYDUNYA_API_URL ??

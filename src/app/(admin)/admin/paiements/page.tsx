@@ -54,7 +54,7 @@ export default async function AdminPaymentsPage() {
           <div className="text-sm leading-relaxed text-night-600">
             <p className="font-semibold">État du fournisseur de paiement</p>
             <p className="mt-1">
-              Fournisseur Mobile Money : <strong>{provider.vendor}</strong> ·{" "}
+              Fournisseur Mobile Money : <strong>{provider.vendor === "ipay" ? "IPay Money" : provider.vendor === "cinetpay" ? "CinetPay" : provider.vendor === "paydunya" ? "PayDunya" : "générique"}</strong> ·{" "}
               Mobile Money :{" "}
               <strong className={provider.mobileMoney ? "text-emerald-700" : "text-red-600"}>
                 {provider.mobileMoney ? "configuré" : "non configuré"}
