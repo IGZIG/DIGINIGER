@@ -52,14 +52,14 @@ begin
     return new;
   end if;
 
-  -- Colonnes immuables côté apprenant : tout ce qui donne un droit d'accès.
-  if new.user_id is distinct from old.user_id
-     or new.plan_id is distinct from old.plan_id
-     or new.status is distinct from old.status
-     or new.current_period_start is distinct from old.current_period_start
-     or new.current_period_end is distinct from old.current_period_end
-     or new.provider is distinct from old.provider
-     or new.provider_ref is distinct from old.provider_ref
+  -- Liste blanche : côté apprenant, SEUL l'arrêt du renouvellement est
+  -- modifiable. Toute autre différence entre l'ancienne et la nouvelle ligne
+  -- (offre, statut, période, fournisseur, référence de paiement, ou toute
+  -- colonne ajoutée plus tard) est refusée. On compare la ligne entière pour
+  -- ne pas dépendre du nom des colonnes.
+  if (to_jsonb(new) - 'cancel_at_period_end' - 'updated_at')
+     is distinct from
+     (to_jsonb(old) - 'cancel_at_period_end' - 'updated_at')
   then
     raise exception 'SUBSCRIPTION_IMMUTABLE: seul l''arrêt du renouvellement peut être demandé par l''apprenant'
       using errcode = '42501';

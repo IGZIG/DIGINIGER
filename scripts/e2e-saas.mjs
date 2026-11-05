@@ -245,7 +245,7 @@ try {
       let ok = false;
       try {
         const victim = await db.query(
-          "insert into subscriptions (user_id, plan_id, status) values ($1, $2, 'active') returning id",
+          "insert into subscriptions (user_id, plan_id, status, provider, provider_ref) values ($1, $2, 'active', 'mobile_money', 'SAAS-E2E-REF') returning id",
           [studentId, freePlan],
         );
         await db.query("set local role authenticated");
@@ -276,6 +276,11 @@ try {
     await attempt(
       "un apprenant ne peut pas réactiver un abonnement coupé",
       "update subscriptions set status = 'active' where id = $1",
+      (id) => [id],
+    );
+    await attempt(
+      "un apprenant ne peut pas effacer sa référence de paiement",
+      "update subscriptions set provider_ref = null where id = $1",
       (id) => [id],
     );
     await attempt(
