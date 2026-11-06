@@ -63,6 +63,14 @@ async function cookieFor(email) {
   return `sb-${ref}-auth-token=${encoded}`;
 }
 
+/** Tous les noms de formateurs, pour vérifier qu'aucun n'est imprimé. */
+async function instructorNames() {
+  const { rows } = await db.query(
+    `select full_name from public.profiles where role = 'instructor' and full_name is not null`,
+  );
+  return rows.map((row) => row.full_name);
+}
+
 /** Relit le texte d'un PDF (ghostscript) pour vérifier ce qui est imprimé. */
 function pdfText(bytes) {
   const file = "/tmp/certificat-verif.pdf";
@@ -81,9 +89,13 @@ try {
   );
   check("les 6 écoles sont présentes", schools.length >= 6, `${schools.length} écoles`);
   check(
-    "chaque école a un directeur",
-    schools.every((s) => Boolean(s.director_name)),
-    schools.filter((s) => !s.director_name).map((s) => s.slug).join(", "),
+    "aucun nom de responsable n'est enregistré",
+    schools.every((s) => !s.director_name),
+    schools.filter((s) => s.director_name).map((s) => s.slug).join(", "),
+  );
+  check(
+    "chaque école garde son rôle de responsable",
+    schools.every((s) => Boolean(s.director_role)),
   );
   check(
     "chaque école a sa couleur",
@@ -104,8 +116,8 @@ try {
   const cert = certs[0];
   check(
     "le certificat existant porte son école",
-    Boolean(cert.school_name && cert.school_accent && cert.director_name),
-    `${cert.school_name ?? "—"} / ${cert.director_name ?? "—"}`,
+    Boolean(cert.school_name && cert.school_accent && cert.director_role),
+    `${cert.school_name ?? "—"} / ${cert.director_role ?? "—"}`,
   );
 
   console.log("\n=== 2. Téléchargement : qui a le droit ?");
@@ -152,7 +164,16 @@ try {
 
   const text = pdfText(bytes);
   check("le nom de l'école figure sur le certificat", text.includes(cert.school_name));
-  check("le directeur figure sur le certificat", text.includes(cert.director_name));
+  check(
+    "le rôle du responsable figure sur le certificat",
+    /Le Directeur|La Directrice|Directeur|Directrice/.test(text),
+  );
+  check("il reste une ligne à signer", /Signature/.test(text));
+  check(
+    "AUCUN nom de formateur ni de directeur n'est imprimé",
+    ![cert.director_name, ...(await instructorNames())].filter(Boolean).some((name) => text.includes(name)),
+    cert.director_name ?? "—",
+  );
   check("le slogan de l'école figure sur le certificat", text.includes((cert.school_tagline ?? "").slice(0, 20)));
   check("le nom de l'apprenant figure sur le certificat", text.includes(cert.student_name));
   check("l'intitulé de la formation figure sur le certificat", text.includes(cert.course_title.slice(0, 25)));
@@ -170,9 +191,28 @@ try {
     (rpc[0]?.def ?? "").includes("school_name"),
   );
   check(
-    "la fonction d'émission enregistre le directeur",
-    (rpc[0]?.def ?? "").includes("director_name"),
+    "la fonction d'émission n'enregistre plus aucun nom",
+    !(rpc[0]?.def ?? "").includes("v_school.director_name"),
   );
+  check(
+    "la fonction d'émission enregistre le rôle du responsable",
+    (rpc[0]?.def ?? "").includes("director_role"),
+  );
+
+  const { rows: stored } = await db.query(
+    `select count(*)::int total,
+            count(director_name)::int with_name
+       from public.certificates`,
+  );
+  check(
+    "aucun nom enregistré avec les certificats",
+    stored[0].with_name === 0,
+    `${stored[0].with_name}/${stored[0].total}`,
+  );
+  const { rows: schoolNames } = await db.query(
+    `select count(director_name)::int with_name from public.schools`,
+  );
+  check("aucun nom enregistré pour les écoles", schoolNames[0].with_name === 0);
 
   console.log("\n=== 5. Maquettes générées");
   const { existsSync: exists } = await import("node:fs");

@@ -95,7 +95,6 @@ def build(school, path):
     accent = hex_color(school.get("accent"))
     name = (school.get("name_fr") or "École").upper()
     tagline = school.get("tagline_fr") or ""
-    director = school.get("director_name") or ""
     role = school.get("director_role") or "Directeur"
     civility = "La" if role.lower().startswith(("directrice", "responsable")) else "Le"
 
@@ -200,14 +199,11 @@ def build(school, path):
     run.font.size = Pt(9)
     run.font.color.rgb = RGBColor.from_string(GREY)
 
-    p = cell_right.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p.paragraph_format.space_after = Pt(0)
-    run = p.add_run(director)
+    # Aucun nom de personne n'est imprimé : une ligne à signer à la main.
+    spacer = cell_right.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(0)
+    run = spacer.add_run("")
     run.font.size = Pt(16)
-    run.font.italic = True
-    run.font.name = "Georgia"
-    run.font.color.rgb = RGBColor.from_string(NIGHT)
 
     sign = cell_right.add_paragraph()
     sign.alignment = WD_ALIGN_PARAGRAPH.RIGHT

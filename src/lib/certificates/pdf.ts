@@ -13,8 +13,9 @@ import QRCode from "qrcode";
  *    imprime. Aucune donnée d'apprenant n'y figure.
  *
  * Dans les deux cas, le certificat porte l'identité de l'ÉCOLE qui délivre la
- * formation : son nom, son slogan, sa couleur et la signature de son directeur.
- * DIGINIGER n'apparaît plus qu'en petit, en tant que plateforme émettrice.
+ * formation : son nom, son slogan, sa couleur et un emplacement de signature.
+ * Aucun nom de formateur ni de directeur n'est imprimé : la ligne est signée
+ * à la main. DIGINIGER n'apparaît plus qu'en petit, comme plateforme émettrice.
  */
 
 const NIGHT = rgb(0.0627, 0.1059, 0.2392); // #101B3D
@@ -101,7 +102,6 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const fontItalic = await pdf.embedFont(StandardFonts.HelveticaOblique);
-  const fontScript = await pdf.embedFont(StandardFonts.TimesRomanItalic); // signature
 
   const centered = (text: string, size: number, font: typeof fontRegular) =>
     (width - font.widthOfTextAtSize(text, size)) / 2;
@@ -345,7 +345,9 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     page.drawText(shortUrl, { x: 46, y: 94, size: 8.5, font: fontRegular, color: accent });
   }
 
-  // --- Bloc central : signature du directeur ------------------------------
+  // --- Bloc central : signature -------------------------------------------
+  // Aucun nom de personne n'est imprimé : seulement le rôle (Le Directeur /
+  // La Directrice) et une ligne à signer à la main.
   const signatureX = 300;
   page.drawText(`${civilityFor(school.directorRole)} ${school.directorRole}`, {
     x: signatureX,
@@ -355,20 +357,14 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     color: GREY,
   });
 
-  const signSize = school.directorName.length > 22 ? 16 : 19;
-  page.drawText(school.directorName, {
+  page.drawRectangle({ x: signatureX, y: 106, width: 210, height: 0.9, color: LIGHT });
+  page.drawText("Signature", {
     x: signatureX,
-    y: 112,
-    size: signSize,
-    font: fontScript,
-    color: NIGHT,
+    y: 92,
+    size: 7.5,
+    font: fontItalic,
+    color: LIGHT,
   });
-  const signWidth = fontScript.widthOfTextAtSize(school.directorName, signSize);
-  page.drawSvgPath(
-    "M0,0 C18,-13 34,10 52,-2 S84,-15 100,2 S126,9 142,-4",
-    { x: signatureX, y: 100, scale: signWidth / 142, borderColor: accent, borderWidth: 1.4 },
-  );
-  page.drawRectangle({ x: signatureX, y: 92, width: 200, height: 0.8, color: LIGHT });
   page.drawText(school.name.slice(0, 46), {
     x: signatureX,
     y: 78,

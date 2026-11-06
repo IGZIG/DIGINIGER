@@ -65,7 +65,8 @@ export async function GET(
       name: certificate.school_name,
       tagline: certificate.school_tagline,
       accent: certificate.school_accent,
-      directorName: certificate.director_name,
+      // Aucun nom de personne n'est transmis : seule la fonction est imprimée,
+      // la signature est apposée à la main sur la ligne prévue.
       directorRole: certificate.director_role,
     },
   });
