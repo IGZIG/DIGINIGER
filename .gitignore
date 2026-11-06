@@ -10,3 +10,6 @@ next-env.d.ts
 .DS_Store
 coverage
 supabase/.temp
+
+# Généré : compilation du générateur de certificats pour les scripts Node
+scripts/.tmp/

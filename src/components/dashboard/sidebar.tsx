@@ -21,6 +21,7 @@ import {
   GraduationCap,
   User,
   TrendingUp,
+  FolderOpen,
   type LucideIcon,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
@@ -47,6 +48,7 @@ const ICONS: Record<string, LucideIcon> = {
   instructor: GraduationCap,
   account: User,
   progress: TrendingUp,
+  documents: FolderOpen,
 };
 
 export interface NavItem {

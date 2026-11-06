@@ -20,7 +20,8 @@
     "ai:index": "node scripts/index-knowledge.mjs",
     "payments:sandbox": "node scripts/payment-sandbox.mjs",
     "check:payments": "node scripts/payment-sandbox.mjs",
-    "doctor": "node scripts/env-doctor.mjs"
+    "doctor": "node scripts/env-doctor.mjs",
+    "certs:models": "esbuild src/lib/certificates/pdf.ts --bundle --platform=node --format=esm --outfile=scripts/.tmp/cert-pdf.mjs --alias:server-only=./scripts/_empty.js --external:pdf-lib --external:qrcode && node scripts/generate-school-certificates.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

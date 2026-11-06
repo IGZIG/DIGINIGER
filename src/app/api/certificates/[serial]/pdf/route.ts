@@ -52,6 +52,8 @@ export async function GET(
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
+  // L'identité de l'école est figée sur le certificat : on ne relit pas la
+  // table `schools`, pour qu'un certificat déjà émis ne change jamais.
   const pdfBytes = await buildCertificatePdf({
     serial: certificate.serial,
     studentName: certificate.student_name,
@@ -59,6 +61,13 @@ export async function GET(
     issuedAt: new Date(certificate.issued_at),
     score: certificate.score,
     verificationUrl: `${siteUrl}/verifier-certificat?numero=${certificate.serial}`,
+    school: {
+      name: certificate.school_name,
+      tagline: certificate.school_tagline,
+      accent: certificate.school_accent,
+      directorName: certificate.director_name,
+      directorRole: certificate.director_role,
+    },
   });
 
   await admin.from("audit_logs").insert({

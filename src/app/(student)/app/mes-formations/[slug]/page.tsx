@@ -3,7 +3,8 @@ import Link from "next/link";
 import { ChevronLeft, Award, ClipboardCheck } from "lucide-react";
 import { LessonPlayer } from "@/components/dashboard/lesson-player";
 import { CertificateRequestButton } from "@/components/dashboard/certificate-request";
-import { getCourseCurriculum, getMyEnrollment, getMyProgress, getPublicCourseBySlug } from "@/lib/queries";
+import { CourseFilesPanel } from "@/components/dashboard/course-files-panel";
+import { getCourseCurriculum, getMyEnrollment, getMyProgress, getPublicCourseBySlug, listCourseFiles } from "@/lib/queries";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import type { Exercise } from "@/types/database";
@@ -23,10 +24,14 @@ export default async function LearnPage({ params }: { params: Promise<{ slug: st
     redirect(`/formations/${slug}`);
   }
 
-  const [curriculum, progress] = await Promise.all([
+  const [curriculum, progress, allFiles] = await Promise.all([
     getCourseCurriculum(course.id),
     getMyProgress(user.authId, course.id),
+    listCourseFiles(course.id),
   ]);
+
+  // L'apprenant ne voit que les documents publiés par le formateur.
+  const visibleFiles = allFiles.filter((file) => file.visibility === "visible");
 
   const supabase = await createServerSupabase();
   const { data: exercises } = await supabase
@@ -80,6 +85,8 @@ export default async function LearnPage({ params }: { params: Promise<{ slug: st
           </ul>
         </section>
       )}
+
+      <CourseFilesPanel files={visibleFiles} />
 
       <LessonPlayer
         courseId={course.id}

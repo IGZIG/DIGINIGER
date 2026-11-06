@@ -13,6 +13,7 @@ export default async function InstructorLayout({ children }: { children: React.R
     { href: "/formateur/formations", label: "Mes formations", icon: "courses" },
     { href: "/formateur/generateur", label: "Créer une formation", icon: "create" },
     { href: "/formateur/generateur#ia", label: "Assistant IA", icon: "ai" },
+    { href: "/formateur/documents", label: "Mes documents", icon: "documents" },
     { href: "/formateur/evaluations", label: "Évaluations", icon: "assessments" },
     { href: "/formateur/apprenants", label: "Apprenants", icon: "learners" },
     { href: "/formateur/revenus", label: "Revenus", icon: "revenue" },

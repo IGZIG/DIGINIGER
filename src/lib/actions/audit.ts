@@ -16,6 +16,8 @@ export async function logAudit(params: {
   entity: string;
   entityId: string;
   metadata?: Record<string, unknown>;
+  /** Motif lisible, affiché dans le journal d'audit (facultatif). */
+  note?: string;
 }): Promise<{ logged: boolean; error?: string }> {
   try {
     const admin = createAdminClient();
@@ -25,7 +27,9 @@ export async function logAudit(params: {
       action: params.action,
       entity: params.entity,
       entity_id: params.entityId,
-      metadata: params.metadata ?? {},
+      metadata: params.note
+        ? { ...(params.metadata ?? {}), note: params.note }
+        : (params.metadata ?? {}),
     });
     if (error) return { logged: false, error: error.message };
     return { logged: true };

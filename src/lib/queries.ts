@@ -338,3 +338,85 @@ export async function getCourseForEdit(courseId: string) {
     exercises: (exercises ?? []) as Exercise[],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Documents de formation
+// ---------------------------------------------------------------------------
+
+export interface CourseFileRecord {
+  id: string;
+  course_id: string;
+  title: string;
+  description: string | null;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  visibility: string;
+  download_count: number;
+  created_at: string;
+}
+
+/** Documents d'une formation. La RLS ne renvoie que ce qui est permis. */
+export async function listCourseFiles(courseId: string): Promise<CourseFileRecord[]> {
+  const supabase = await createServerSupabase();
+  const { data } = await supabase
+    .from("course_files")
+    .select(
+      "id, course_id, title, description, file_name, mime_type, size_bytes, visibility, download_count, created_at",
+    )
+    .eq("course_id", courseId)
+    .order("created_at", { ascending: false });
+  return (data ?? []) as CourseFileRecord[];
+}
+
+/**
+ * Tous les documents des formations d'un formateur (ou de toutes, pour
+ * l'administration), avec le titre de la formation. Sert à la bibliothèque
+ * /formateur/documents.
+ */
+export async function listCourseFilesForStaff(
+  userId: string,
+  isAdmin: boolean,
+): Promise<Array<CourseFileRecord & { course_title: string; course_slug: string }>> {
+  const supabase = await createServerSupabase();
+
+  let courseQuery = supabase.from("courses").select("id, title_fr, slug");
+  if (!isAdmin) courseQuery = courseQuery.eq("instructor_id", userId);
+  const { data: courses } = await courseQuery;
+
+  const courseIds = (courses ?? []).map((course) => course.id as string);
+  if (courseIds.length === 0) return [];
+
+  const titles = new Map((courses ?? []).map((course) => [course.id as string, course]));
+  const { data: files } = await supabase
+    .from("course_files")
+    .select(
+      "id, course_id, title, description, file_name, mime_type, size_bytes, visibility, download_count, created_at",
+    )
+    .in("course_id", courseIds)
+    .order("created_at", { ascending: false });
+
+  return ((files ?? []) as CourseFileRecord[]).map((file) => ({
+    ...file,
+    course_title: (titles.get(file.course_id)?.title_fr as string) ?? "Formation",
+    course_slug: (titles.get(file.course_id)?.slug as string) ?? "",
+  }));
+}
+
+/** Nombre de téléchargements par document (pour l'écran formateur). */
+export async function countCourseFileDownloads(
+  fileIds: string[],
+): Promise<Record<string, number>> {
+  if (fileIds.length === 0) return {};
+  const supabase = await createServerSupabase();
+  const { data } = await supabase
+    .from("course_file_downloads")
+    .select("file_id")
+    .in("file_id", fileIds);
+  const counts: Record<string, number> = {};
+  for (const row of data ?? []) {
+    const key = row.file_id as string;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}

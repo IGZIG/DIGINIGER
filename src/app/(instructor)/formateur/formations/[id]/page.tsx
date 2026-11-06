@@ -2,8 +2,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { CourseEditor } from "@/components/dashboard/course-editor";
+import { FileManager } from "@/components/dashboard/file-manager";
 import { requireRole } from "@/lib/auth";
-import { getCourseForEdit, listSchools } from "@/lib/queries";
+import { getCourseForEdit, listCourseFiles, listSchools } from "@/lib/queries";
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { Lesson } from "@/types/database";
 
@@ -30,7 +31,7 @@ export default async function EditCoursePage({ params }: { params: Promise<{ id:
         .order("position")
     : { data: [] };
 
-  const schools = await listSchools();
+  const [schools, files] = await Promise.all([listSchools(), listCourseFiles(id)]);
 
   return (
     <div className="space-y-5">
@@ -41,6 +42,21 @@ export default async function EditCoursePage({ params }: { params: Promise<{ id:
         <ChevronLeft className="h-3 w-3" aria-hidden />
         Mes formations
       </Link>
+
+      <FileManager
+        courseId={id}
+        files={files.map((file) => ({
+          id: file.id,
+          title: file.title,
+          description: file.description,
+          fileName: file.file_name,
+          mimeType: file.mime_type,
+          sizeBytes: Number(file.size_bytes),
+          visibility: file.visibility,
+          downloadCount: file.download_count,
+          createdAt: file.created_at,
+        }))}
+      />
 
       <CourseEditor
         course={course}
