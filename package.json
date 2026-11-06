@@ -21,7 +21,9 @@
     "payments:sandbox": "node scripts/payment-sandbox.mjs",
     "check:payments": "node scripts/payment-sandbox.mjs",
     "doctor": "node scripts/env-doctor.mjs",
-    "certs:models": "esbuild src/lib/certificates/pdf.ts --bundle --platform=node --format=esm --outfile=scripts/.tmp/cert-pdf.mjs --alias:server-only=./scripts/_empty.js --external:pdf-lib --external:qrcode && node scripts/generate-school-certificates.mjs"
+    "certs:models": "esbuild src/lib/certificates/pdf.ts --bundle --platform=node --format=esm --outfile=scripts/.tmp/cert-pdf.mjs --alias:server-only=./scripts/_empty.js --external:pdf-lib --external:qrcode && node scripts/generate-school-certificates.mjs",
+    "certs:blank": "esbuild src/lib/certificates/pdf.ts --bundle --platform=node --format=esm --outfile=scripts/.tmp/cert-pdf.mjs --alias:server-only=./scripts/_empty.js --external:pdf-lib --external:qrcode && node scripts/generate-blank-certificates.mjs",
+    "certs:word": "node scripts/dump-schools.mjs && python3 scripts/generate-certificates-docx.py"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

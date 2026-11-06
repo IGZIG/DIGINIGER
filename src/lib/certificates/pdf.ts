@@ -5,12 +5,16 @@ import QRCode from "qrcode";
 /**
  * Génération du certificat PDF (côté serveur uniquement).
  *
- * Chaque certificat porte l'identité de l'ÉCOLE qui délivre la formation :
- * son nom, son slogan, sa couleur et la signature de son directeur.
- * DIGINIGER n'apparaît plus qu'en petit, en tant que plateforme émettrice.
+ * Deux usages :
+ *  - certificat RÉEL : les données de l'apprenant sont imprimées, avec le QR
+ *    code de vérification ;
+ *  - certificat VIERGE (`blank`) : les zones à remplir deviennent des champs
+ *    de saisie modifiables — on tape le nom, la formation, la date, puis on
+ *    imprime. Aucune donnée d'apprenant n'y figure.
  *
- * Le PDF est déterministe : mêmes données → mêmes octets (hors horodatage).
- * Le QR code renvoie vers la page publique de vérification.
+ * Dans les deux cas, le certificat porte l'identité de l'ÉCOLE qui délivre la
+ * formation : son nom, son slogan, sa couleur et la signature de son directeur.
+ * DIGINIGER n'apparaît plus qu'en petit, en tant que plateforme émettrice.
  */
 
 const NIGHT = rgb(0.0627, 0.1059, 0.2392); // #101B3D
@@ -43,6 +47,8 @@ export interface CertificateData {
   school?: SchoolIdentity | null;
   /** Affiche un filigrane « SPÉCIMEN » (maquettes, modèles à valider). */
   specimen?: boolean;
+  /** Certificat vierge : champs à remplir au lieu des valeurs imprimées. */
+  blank?: boolean;
 }
 
 /** Convertit « #16A34A » en couleur pdf-lib, avec repli sûr. */
@@ -81,12 +87,13 @@ function civilityFor(role: string): string {
 export async function buildCertificatePdf(data: CertificateData): Promise<Uint8Array> {
   const school = identityOf(data.school);
   const accent = hexToRgb(school.accent);
+  const blank = Boolean(data.blank);
 
   const pdf = await PDFDocument.create();
-  pdf.setTitle(`Certificat ${data.serial} — ${school.name}`);
+  pdf.setTitle(blank ? `Certificat vierge — ${school.name}` : `Certificat ${data.serial} — ${school.name}`);
   pdf.setAuthor(school.name);
-  pdf.setSubject(data.courseTitle);
-  pdf.setKeywords(["certificat", "DIGINIGER", school.name, data.serial]);
+  pdf.setSubject(blank ? "Certificat vierge à compléter" : data.courseTitle);
+  pdf.setKeywords(["certificat", "DIGINIGER", school.name, blank ? "vierge" : data.serial]);
 
   const page = pdf.addPage([842, 595]); // A4 paysage
   const { width, height } = page.getSize();
@@ -98,6 +105,46 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
 
   const centered = (text: string, size: number, font: typeof fontRegular) =>
     (width - font.widthOfTextAtSize(text, size)) / 2;
+
+  // --- Champs à remplir (certificat vierge) --------------------------------
+  const form = blank ? pdf.getForm() : null;
+  const addField = (
+    name: string,
+    options: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      size: number;
+      font: typeof fontRegular;
+      hint?: string;
+      centered?: boolean;
+    },
+  ) => {
+    if (!form) return;
+    const field = form.createTextField(name);
+    field.addToPage(page, {
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+      borderColor: rgb(0.78, 0.81, 0.87),
+      borderWidth: 0.75,
+      backgroundColor: rgb(0.962, 0.97, 0.992),
+    });
+    field.setFontSize(options.size);
+    field.updateAppearances(options.font);
+    if (options.hint) {
+      const hintWidth = fontRegular.widthOfTextAtSize(options.hint, 7);
+      page.drawText(options.hint, {
+        x: options.centered ? (width - hintWidth) / 2 : options.x,
+        y: options.y - 11,
+        size: 7,
+        font: fontRegular,
+        color: LIGHT,
+      });
+    }
+  };
 
   // --- Fond et bandeaux de couleur de l'école -----------------------------
   page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(0.995, 0.995, 0.998) });
@@ -168,21 +215,41 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
   });
 
   // --- Nom de l'apprenant --------------------------------------------------
-  const nameSize = data.studentName.length > 26 ? 24 : 30;
-  page.drawText(data.studentName, {
-    x: centered(data.studentName, nameSize, fontBold),
-    y: height - 240,
-    size: nameSize,
-    font: fontBold,
-    color: NIGHT,
-  });
-  page.drawRectangle({
-    x: centered(data.studentName, nameSize, fontBold),
-    y: height - 252,
-    width: fontBold.widthOfTextAtSize(data.studentName, nameSize),
-    height: 2.5,
-    color: GOLD,
-  });
+  if (blank) {
+    addField("apprenant", {
+      x: (width - 460) / 2,
+      y: height - 250,
+      width: 460,
+      height: 34,
+      size: 19,
+      font: fontBold,
+      hint: "Nom et prénom de l'apprenant",
+      centered: true,
+    });
+    page.drawRectangle({
+      x: (width - 460) / 2,
+      y: height - 258,
+      width: 460,
+      height: 2.5,
+      color: GOLD,
+    });
+  } else {
+    const nameSize = data.studentName.length > 26 ? 24 : 30;
+    page.drawText(data.studentName, {
+      x: centered(data.studentName, nameSize, fontBold),
+      y: height - 240,
+      size: nameSize,
+      font: fontBold,
+      color: NIGHT,
+    });
+    page.drawRectangle({
+      x: centered(data.studentName, nameSize, fontBold),
+      y: height - 252,
+      width: fontBold.widthOfTextAtSize(data.studentName, nameSize),
+      height: 2.5,
+      color: GOLD,
+    });
+  }
 
   // --- Formation -----------------------------------------------------------
   const intro = "pour avoir suivi et validé avec succès la formation";
@@ -194,17 +261,30 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     color: GREY,
   });
 
-  const titleSize = data.courseTitle.length > 52 ? 15 : 18;
-  const courseLines = wrapText(data.courseTitle, 560, titleSize, fontBold).slice(0, 2);
-  courseLines.forEach((line, index) => {
-    page.drawText(line, {
-      x: centered(line, titleSize, fontBold),
-      y: height - 320 - index * (titleSize + 8),
-      size: titleSize,
+  if (blank) {
+    addField("formation", {
+      x: (width - 560) / 2,
+      y: height - 330,
+      width: 560,
+      height: 28,
+      size: 15,
       font: fontBold,
-      color: accent,
+      hint: "Intitulé de la formation",
+      centered: true,
     });
-  });
+  } else {
+    const titleSize = data.courseTitle.length > 52 ? 15 : 18;
+    const courseLines = wrapText(data.courseTitle, 560, titleSize, fontBold).slice(0, 2);
+    courseLines.forEach((line, index) => {
+      page.drawText(line, {
+        x: centered(line, titleSize, fontBold),
+        y: height - 320 - index * (titleSize + 8),
+        size: titleSize,
+        font: fontBold,
+        color: accent,
+      });
+    });
+  }
 
   // --- Mention de réussite -------------------------------------------------
   const mention =
@@ -220,24 +300,50 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
   });
 
   // --- Bloc de gauche : références ----------------------------------------
-  const issuedLabel = `Délivré le ${data.issuedAt.toLocaleDateString("fr-FR")}`;
-  page.drawText(issuedLabel, { x: 46, y: 148, size: 10, font: fontRegular, color: GREY });
-  page.drawText(`Numéro : ${data.serial}`, {
-    x: 46,
-    y: 130,
-    size: 10,
-    font: fontBold,
-    color: NIGHT,
-  });
-  page.drawText("Vérifiez l'authenticité de ce certificat :", {
-    x: 46,
-    y: 108,
-    size: 8.5,
-    font: fontRegular,
-    color: GREY,
-  });
-  const shortUrl = data.verificationUrl.replace(/^https?:\/\//, "").slice(0, 58);
-  page.drawText(shortUrl, { x: 46, y: 94, size: 8.5, font: fontRegular, color: accent });
+  if (blank) {
+    addField("date", {
+      x: 46,
+      y: 136,
+      width: 170,
+      height: 19,
+      size: 10,
+      font: fontRegular,
+      hint: "Date d'obtention",
+    });
+    addField("numero", {
+      x: 46,
+      y: 96,
+      width: 240,
+      height: 19,
+      size: 10,
+      font: fontBold,
+      hint: "Numéro du certificat",
+    });
+  } else {
+    page.drawText(`Délivré le ${data.issuedAt.toLocaleDateString("fr-FR")}`, {
+      x: 46,
+      y: 148,
+      size: 10,
+      font: fontRegular,
+      color: GREY,
+    });
+    page.drawText(`Numéro : ${data.serial}`, {
+      x: 46,
+      y: 130,
+      size: 10,
+      font: fontBold,
+      color: NIGHT,
+    });
+    page.drawText("Vérifiez l'authenticité de ce certificat :", {
+      x: 46,
+      y: 108,
+      size: 8.5,
+      font: fontRegular,
+      color: GREY,
+    });
+    const shortUrl = data.verificationUrl.replace(/^https?:\/\//, "").slice(0, 58);
+    page.drawText(shortUrl, { x: 46, y: 94, size: 8.5, font: fontRegular, color: accent });
+  }
 
   // --- Bloc central : signature du directeur ------------------------------
   const signatureX = 300;
@@ -249,7 +355,6 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     color: GREY,
   });
 
-  // Nom en script + trait de plume
   const signSize = school.directorName.length > 22 ? 16 : 19;
   page.drawText(school.directorName, {
     x: signatureX,
@@ -272,27 +377,52 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     color: GREY,
   });
 
-  // --- Bloc de droite : QR code -------------------------------------------
-  const qrDataUrl = await QRCode.toDataURL(data.verificationUrl, {
-    margin: 1,
-    width: 320,
-    color: { dark: "#101B3D", light: "#FFFFFF" },
-  });
-  const qrImage = await pdf.embedPng(qrDataUrl);
+  // --- Bloc de droite : QR code (ou emplacement réservé) ------------------
   const qrSize = 104;
-  page.drawImage(qrImage, {
-    x: width - 46 - qrSize,
-    y: 78,
-    width: qrSize,
-    height: qrSize,
-  });
-  page.drawText("Scanner pour vérifier", {
-    x: width - 46 - fontRegular.widthOfTextAtSize("Scanner pour vérifier", 8),
-    y: 64,
-    size: 8,
-    font: fontRegular,
-    color: GREY,
-  });
+  const qrX = width - 46 - qrSize;
+
+  if (blank) {
+    page.drawRectangle({
+      x: qrX,
+      y: 78,
+      width: qrSize,
+      height: qrSize,
+      borderColor: rgb(0.82, 0.84, 0.89),
+      borderWidth: 0.75,
+      color: rgb(0.975, 0.978, 0.99),
+    });
+    const label = "Emplacement réservé";
+    page.drawText(label, {
+      x: qrX + (qrSize - fontRegular.widthOfTextAtSize(label, 7)) / 2,
+      y: 118,
+      size: 7,
+      font: fontRegular,
+      color: LIGHT,
+    });
+    const label2 = "au QR code de vérification";
+    page.drawText(label2, {
+      x: qrX + (qrSize - fontRegular.widthOfTextAtSize(label2, 7)) / 2,
+      y: 108,
+      size: 7,
+      font: fontRegular,
+      color: LIGHT,
+    });
+  } else {
+    const qrDataUrl = await QRCode.toDataURL(data.verificationUrl, {
+      margin: 1,
+      width: 320,
+      color: { dark: "#101B3D", light: "#FFFFFF" },
+    });
+    const qrImage = await pdf.embedPng(qrDataUrl);
+    page.drawImage(qrImage, { x: qrX, y: 78, width: qrSize, height: qrSize });
+    page.drawText("Scanner pour vérifier", {
+      x: width - 46 - fontRegular.widthOfTextAtSize("Scanner pour vérifier", 8),
+      y: 64,
+      size: 8,
+      font: fontRegular,
+      color: GREY,
+    });
+  }
 
   // --- Pied de page ---------------------------------------------------------
   const footer = `Document émis électroniquement par DIGINIGER — Académie numérique intelligente · ${school.name} · Niamey, Niger`;
@@ -304,17 +434,17 @@ export async function buildCertificatePdf(data: CertificateData): Promise<Uint8A
     color: LIGHT,
   });
 
-  // --- Filigrane « SPÉCIMEN » ----------------------------------------------
-  if (data.specimen) {
-    const mark = "SPÉCIMEN";
-    page.drawText(mark, {
-      x: 150,
+  // --- Filigrane -------------------------------------------------------------
+  const watermark = blank ? "MODÈLE VIERGE" : data.specimen ? "SPÉCIMEN" : null;
+  if (watermark) {
+    page.drawText(watermark, {
+      x: 130,
       y: 250,
-      size: 82,
+      size: watermark.length > 10 ? 62 : 82,
       font: fontBold,
       color: rgb(0.86, 0.87, 0.9),
       rotate: degrees(-28),
-      opacity: 0.55,
+      opacity: 0.5,
     });
   }
 
